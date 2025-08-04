@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beat that Clock</title>
+  <style>
+    /* Modern, clean styling */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f7f9fc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .timer-container {
+      background-color: #ffffff;
+      padding: 30px 50px;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    h1 {
+      margin-top: 0;
+      margin-bottom: 25px;
+      font-size: 28px;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 15px; /* increased gap for larger buttons */
+      margin-bottom: 25px;
+      justify-content: center;
+    }
+    #timerDisplay {
+      font-size: 64px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      letter-spacing: 2px;
+    }
+    .info {
+      margin-top: 8px;
+      font-size: 14px;
+      color: #666;
+    }
+    input[type="number"] {
+      padding: 8px;
+      width: 90px;
+      font-size: 18px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      /* Improve button appearance for larger size */
+      padding: 12px 24px;
+      min-width: 120px; /* ensure buttons are uniformly wide */
+      font-size: 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.2s, box-shadow 0.2s;
+    }
+
+    /* Add a subtle shadow on hover to improve feedback */
+    button:hover {
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+    button.primary {
+      background-color: #0078D4;
+      color: #ffffff;
+    }
+    button.primary:hover {
+      background-color: #005ba1;
+    }
+    button.secondary {
+      background-color: #f0f0f0;
+      color: #333333;
+    }
+    button.secondary:hover {
+      background-color: #e0e0e0;
+    }
+  </style>
+</head>
+<body>
+  <div class="timer-container">
+    <h1>Beat that Clock™</h1>
+    <div class="controls">
+      <label for="minutesInput">Minutes:</label>
+      <input type="number" id="minutesInput" min="1" step="1" value="10" />
+      <button id="setTimerBtn" class="secondary">Set/Reset</button>
+      <button id="startBtn" class="primary">Start Timer</button>
+    </div>
+    <div id="timerDisplay">10:00</div>
+    <p class="info">Times timer has run out: <span id="timesExpired">0</span></p>
+    <p class="info"><small>Press the space bar to reset the timer</small></p>
+  </div>
+
+  <script>
+    (function() {
+      let originalSeconds = 600; // default 10 minutes
+      // timeRemaining stored in seconds is no longer needed beyond updateDisplay; the
+      // countdown is tracked via the millisecond variable timeRemainingMs.
+      // Time remaining in milliseconds for higher precision when pausing/resuming
+      let timeRemainingMs = originalSeconds * 1000;
+      // Timestamp (ms) when the current countdown ends
+      let endTime = null;
+      let timerInterval = null;
+      let timesExpired = 0;
+      let running = false; // track whether the timer is currently running
+      // Note: we no longer track whether the timer has started previously, simplifying control logic
+
+      const timerDisplay = document.getElementById('timerDisplay');
+      const timesExpiredSpan = document.getElementById('timesExpired');
+      const minutesInput = document.getElementById('minutesInput');
+      const setTimerBtn = document.getElementById('setTimerBtn');
+      const startBtn = document.getElementById('startBtn');
+
+      // Format seconds into MM:SS string
+      function formatTime(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      }
+
+      // Update the timer display and expired count
+      function updateDisplay() {
+        /*
+         * Derive the number of seconds to show on the display.
+         *
+         * When the timer is running we use Math.ceil to ensure that the
+         * first second is displayed immediately. We subtract one second from
+         * the rounded value so 10:00 becomes 9:59 right away and holds for a
+         * full second. When the timer is stopped (paused), we instead use
+         * Math.floor so that fractional seconds are never rounded up (e.g.
+         * stopping at 39.5 s shows 00:39 rather than 00:40). This logic
+         * maintains an intuitive countdown during operation and accurate
+         * values whenever the timer is paused.
+         */
+        let seconds;
+        if (running) {
+          seconds = Math.ceil(timeRemainingMs / 1000) - 1;
+        } else {
+          seconds = Math.floor(timeRemainingMs / 1000);
+        }
+        if (seconds < 0) {
+          seconds = 0;
+        }
+        // Render the formatted time and update the expired counter.
+        timerDisplay.textContent = formatTime(seconds);
+        timesExpiredSpan.textContent = timesExpired;
+      }
+
+      // Tick function: called periodically (hundreds of milliseconds) for accurate timing
+      function tick() {
+        const now = Date.now();
+        // Compute remaining milliseconds
+        timeRemainingMs = endTime - now;
+        if (timeRemainingMs <= 0) {
+          // Timer has run out; increment and reset
+          timesExpired++;
+          timeRemainingMs = originalSeconds * 1000;
+          endTime = now + timeRemainingMs;
+        }
+        updateDisplay();
+      }
+
+      // Start the timer
+      function startTimer() {
+        if (running) return;
+        // Initialize endTime based on remaining milliseconds
+        endTime = Date.now() + timeRemainingMs;
+        // Run tick more frequently for precision (every 100ms)
+        timerInterval = setInterval(tick, 100);
+        running = true;
+        startBtn.textContent = 'Stop Timer';
+        // Immediately update the display to reflect running state (show one second less)
+        updateDisplay();
+      }
+
+      // Stop the timer
+      function stopTimer() {
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+          running = false;
+          startBtn.textContent = 'Start Timer';
+          // Capture remaining time accurately when pausing
+          timeRemainingMs = Math.max(endTime - Date.now(), 0);
+          updateDisplay();
+        }
+      }
+
+      // Reset the countdown to the original time
+      function resetTimer() {
+        // Reset remaining milliseconds to original
+        timeRemainingMs = originalSeconds * 1000;
+        updateDisplay();
+        // If timer is running, update the endTime to reflect the reset
+        if (running) {
+          endTime = Date.now() + timeRemainingMs;
+        }
+      }
+
+      // Reset to the previously configured duration and then start immediately.
+      //
+      // This helper is used by the Space bar handler to reset the timer
+      // without committing any changes in the minutes input.  It uses the
+      // existing originalSeconds value (the current configured duration)
+      // instead of reading from the minutesInput.  After resetting the
+      // remaining time, the timer is started if it was stopped, or its
+      // end time is refreshed if it was running.
+      function resetToOriginalAndStart() {
+        // Always compute the full duration from the existing originalSeconds
+        timeRemainingMs = originalSeconds * 1000;
+        updateDisplay();
+        if (running) {
+          // Refresh endTime so the countdown restarts immediately from the
+          // beginning when already running.
+          endTime = Date.now() + timeRemainingMs;
+        } else {
+          // Start the timer if it was not running.  startTimer() will set
+          // running = true and compute a fresh endTime for us.
+          startTimer();
+        }
+      }
+
+      // setNewTimer() is no longer used; combined behaviour implemented in setResetAndStart()
+
+      // Combined behaviour: set/reset the timer and start it.
+      // When invoked, this function updates the timer duration based on the current
+      // minutes input (if valid) and restarts the countdown from the full duration.
+      function setResetAndStart() {
+        // Determine the desired minutes from input; fallback to current minutes if invalid
+        const enteredMinutes = parseInt(minutesInput.value, 10);
+        const minutesValid = !isNaN(enteredMinutes) && enteredMinutes > 0;
+        const currentMinutes = originalSeconds / 60;
+        const newMinutes = minutesValid ? enteredMinutes : currentMinutes;
+        // If the input minutes differ from the current timer configuration, update originalSeconds
+        if (minutesValid && newMinutes !== currentMinutes) {
+          originalSeconds = newMinutes * 60;
+          // Reset the run-out counter for a fresh timer
+          timesExpired = 0;
+        }
+        // Always reset the countdown to the full duration
+        timeRemainingMs = originalSeconds * 1000;
+        updateDisplay();
+        // If the timer is currently running, adjust the end time to resume immediately
+        if (running) {
+          // If the timer is already running, adjust the end time so the
+          // countdown resumes immediately from the full duration.
+          endTime = Date.now() + timeRemainingMs;
+        } else {
+          // Start the timer if it was stopped.  No need to nullify endTime
+          // here because startTimer will compute a new end time.
+          startTimer();
+        }
+      }
+
+      // Event listeners
+      setTimerBtn.addEventListener('click', () => {
+        // Combined set/reset button: update timer and start or reset it
+        setResetAndStart();
+      });
+
+      startBtn.addEventListener('click', () => {
+        if (!running) {
+          startTimer();
+        } else {
+          stopTimer();
+        }
+      });
+
+
+      // Keydown handler to manage both the Space bar and Enter key
+      // behaviour.  Consolidating these event handlers into a single
+      // listener simplifies the logic and avoids multiple callbacks
+      // firing for a single key press.
+      document.addEventListener('keydown', (event) => {
+        const key = event.code || event.key;
+        // Handle the space bar: reset to the existing timer duration without
+        // committing any pending changes in the minutes input.  Pressing
+        // Space always resets to the previously configured duration and
+        // starts immediately.  This prevents resuming a paused countdown
+        // or inadvertently applying an unconfirmed minutes value when
+        // space is pressed during editing.
+        if (key === 'Space') {
+          event.preventDefault();
+          resetToOriginalAndStart();
+          return;
+        }
+        // Handle Enter: decide based on focus target.  When the minutes input
+        // has focus, Enter acts like Set/Reset; elsewhere it toggles
+        // Start/Stop without altering the remaining duration.
+        if (key === 'Enter') {
+          event.preventDefault();
+          if (event.target === minutesInput) {
+            setResetAndStart();
+          } else {
+            if (!running) {
+              startTimer();
+            } else {
+              stopTimer();
+            }
+          }
+        }
+      });
+
+      /*
+       * Removed redundant Enter key listener.  The unified keydown handler
+       * above now manages both Space and Enter key behaviour, so this
+       * dedicated Enter listener is no longer necessary.  Consolidating
+       * handlers avoids duplicate logic and ensures consistent behaviour.
+       */
+
+      // Initial display
+      updateDisplay();
+    })();
+  </script>
+</body>
+</html>
